@@ -1,3 +1,6 @@
+
+  #include <AccelStepper.h>
+  
 // Define robot dimensions
 #define L1 200  // Length of segment 1
 #define L2 200  // Length of segment 2
@@ -21,7 +24,117 @@
 #define limit_switch_pin_9 A1
 #define limit_switch_pin_10 A2
 #define limit_switch_pin_11 A3
+//Define Constants
 
+const float WORKSPACE_EDGE_LENGTH = 400.0; // in mm
+const float WORKSPACE_X_MIN = -WORKSPACE_EDGE_LENGTH / 2;
+const float WORKSPACE_X_MAX = WORKSPACE_EDGE_LENGTH / 2;
+const float WORKSPACE_Y_MIN = -WORKSPACE_EDGE_LENGTH / 2;
+const float WORKSPACE_Y_MAX = WORKSPACE_EDGE_LENGTH / 2;
+const float WORKSPACE_Z_MIN = 0.0;
+const float WORKSPACE_Z_MAX = WORKSPACE_EDGE_LENGTH;
+
+////////////////////////////////////////////////
+
+// Define constants
+const float steps_per_revolution = 200.0;
+const float microstepping = 16.0;
+const float gearbox_ratio = 4.0;
+const float drum_diameter = 40.0; // mm
+const float cable_length_per_revolution = drum_diameter * PI;
+const float cable_length_per_step = cable_length_per_revolution / (steps_per_revolution * microstepping * gearbox_ratio);
+const float cable_length_per_button_press = 50.0; // mm
+const float max_cable_length = sqrt(3.0) * 200.0; // mm
+
+const float cableDiameter = 1.0; // mm
+
+// Robot dimensions
+const float workVolume = 400.0; // mm
+
+// Limit switch distances from the corner
+const int switchDistance = 50; //mm
+
+
+// Acceleration and speed
+const float acceleration = 100.0; // mm/s^2
+const float maxSpeed = 200.0; // mm/s
+
+
+// Define variables for current position and homing state
+float current_x = 0.0;
+float current_y = 0.0;
+float current_z = 0.0;
+bool is_homed = false;
+
+// Define variables for stepper motor pins
+const int stepper_pins[4][4] = {
+  {2, 3, 4, 5},
+  {6, 7, 8, 9},
+  {10, 11, 12, 13},
+  {14, 15, 16, 17}
+};
+
+// Define variables for limit switch pins
+const int limit_switch_pins[4] = {18, 19, 20, 21};
+
+// Define variables for stepper motor drivers Create motor objects
+AccelStepper motor1(AccelStepper::HALF4WIRE, motor1Pin1, motor1Pin3, motor1Pin2, motor1Pin4);
+AccelStepper motor2(AccelStepper::HALF4WIRE, motor2Pin1, motor2Pin3, motor2Pin2, motor2Pin4);
+AccelStepper motor3(AccelStepper::HALF4WIRE, motor3Pin1, motor3Pin3, motor3Pin2, motor3Pin4);
+AccelStepper motor4(AccelStepper::HALF4WIRE, motor4Pin1, motor4Pin3, motor4Pin2, motor4Pin4);
+
+
+// Current motor positions
+float motor1Position = 0.0;
+float motor2Position = 0.0;
+float motor3Position = 0.0;
+float motor4Position = 0.0;
+
+// Calculate cable length from motor position
+float getCableLength(float motorPosition) {
+  float cableLength = (motorPosition / stepsPerMicrostep) * drumDiameter * PI / transmissionRatio + sqrt(2) * workVolume / 2;
+  return cableLength;
+}
+
+// Calculate motor position from cable length
+float getMotorPosition(float cableLength) {
+  float motorPosition = ((cableLength - sqrt(2) * workVolume / 2) * transmissionRatio) / (drumDiameter * PI) * stepsPerMicrostep;
+  return motorPosition;
+}
+
+// Move motor to position
+void moveMotor(AccelStepper &motor, float position) {
+  float currentPosition = motor.currentPosition();
+  float steps = position - currentPosition;
+  motor.move(steps);
+}
+
+// Home motor
+void homeMotor(AccelStepper &motor, int switchPin, float &position) {
+  // Define variables for current position and homing state
+  bool is_homed = false;
+
+  // Home motor until limit switch is triggered
+  while (!is_homed) {
+    motor.setAcceleration(acceleration);
+    motor.setMaxSpeed(maxSpeed);
+    motor.moveTo(-1000000);
+    while (motor.distanceToGo() != 0) {
+      motor.run();
+      if (digitalRead(switchPin) == HIGH) {
+        motor.setCurrentPosition(0);
+        is_homed = true;
+        position = 0;
+        break;
+      }
+    }
+  }
+}
+
+// Define variables for limit switches
+bool limit_switch_states[4] = {false, false, false, false};
+
+/////////////////////////////////////////
 // Define variables
 float x, y, z;  // End effector position in xyz coordinates
 float q1, q2;  // Joint angles
@@ -32,23 +145,32 @@ float drum_pos_8, drum_pos_9, drum_pos_10, drum_pos_11;  // Position of winch dr
 float dx, dy, dz;  // Difference between desired and actual end effector position
 float error_threshold = 1;  // Error threshold for position adjustment
 
+
+
+
 void setup() {
   // Initialize serial communication
   Serial.begin(9600);
   
-  // Set pin modes for stepper motor drivers and limit switches
-  pinMode(dir_pin_8, OUTPUT);
-  pinMode(step_pin_8, OUTPUT);
-  pinMode(dir_pin_9, OUTPUT);
-  pinMode(step_pin_9, OUTPUT);
-  pinMode(dir_pin_10, OUTPUT);
-  pinMode(step_pin_10, OUTPUT);
-  pinMode(dir_pin_11, OUTPUT);
-  pinMode(step_pin_11, OUTPUT);
-  pinMode(limit_switch_pin_8, INPUT_PULLUP);
-  pinMode(limit_switch_pin_9, INPUT_PULLUP);
-  pinMode(limit_switch_pin_10, INPUT_PULLUP);
-  pinMode(limit_switch_pin_11, INPUT_PULLUP);
+  // Set up limit switches as inputs with pull-up resistors
+  for (int i = 0; i < 4; i++) {
+    pinMode(limit_switch_pins[i], INPUT_PULLUP);
+  }
+  
+  
+
+
+  // Set up stepper motors with appropriate step and speed settings
+  for (int i = 0; i < 4; i++) {
+    steppers[i].setMaxSpeed(500.0);
+    steppers[i].setAcceleration(100.0);
+    steppers[i].setSpeed(100.0);
+  }
+ 
+  // Home the robot
+  home();
+}
+
   
   // Homing procedure for each winch
   // Moving winch 8 to home position
@@ -97,7 +219,67 @@ void setup() {
   Serial.println("Winch 11 home position set.");
 }
 
+////////////////////////////////////////////
+void calculateCableLengths(float winchPositions[], float cableLengths[])
+{
+  for (int i = 0; i < NUM_WINCHES; i++) {
+    float winchDistanceFromCorner = sqrt(pow(WORKSPACE_EDGE_LENGTH / 2, 2) + pow(WORKSPACE_EDGE_LENGTH / 2, 2));
+    float winchDistanceFromZAxis = sqrt(pow(WORKSPACE_EDGE_LENGTH / 2, 2) + pow(WORKSPACE_EDGE_LENGTH / 2, 2));
+    float winchX = winchDistanceFromCorner * cos(i * PI / 2);
+    float winchY = winchDistanceFromCorner * sin(i * PI / 2);
+    float winchZ = winchDistanceFromZAxis;
+    float winchRadius = 20.0; // in mm
+
+    float cableLength = sqrt(pow(winchX - winchPositions[i], 2) + pow(winchY, 2) + pow(winchZ, 2) - pow(winchRadius, 2));
+    cableLengths[i] = cableLength;
+  }
+}
+
+///////////////////////////////////////////////////
+
+void calculateEffectorPosition(float cableLengths[], float effectorPosition[])
+{
+  float alpha1 = atan2(cableLengths[0], cableLengths[2]);
+  float alpha2 = atan2(cableLengths[1], cableLengths[3]);
+  float beta1 = atan2(cableLengths[0], cableLengths[1]);
+  float beta2 = atan2(cableLengths[2], cableLengths[3]);
+
+  float effectorX = (cableLengths[0] * sin(alpha2) + cableLengths[1] * sin(alpha1)) / (sin(alpha1) * cos(alpha2) - cos(alpha1) * sin(alpha2));
+  float effectorY = (cableLengths[0] * cos(alpha2) + cableLengths[1] * cos(alpha1)) / (cos(alpha1) * sin(alpha2) - sin(alpha1) * cos(alpha2));
+  float effectorZ = (cableLengths[2] * sin(beta2) + cableLengths[3] * sin(beta1)) / (sin(beta1) * cos(beta2) - cos(beta1) * sin(beta2));
+
+  effectorPosition[0] = effectorX;
+  effectorPosition[1] = effectorY;
+  effectorPosition[2] = effectorZ;
+}
+
+////////////////////////////////////////////////////////////////
+
+void moveMotor(AccelStepper &motor, float position) {
+  float currentPosition = motor.currentPosition();
+  float steps = position - currentPosition;
+  motor.move(steps);
+}
+///////////////////////////////////////////////////////////
+
+
+
 void loop() {
+  // Read limit switch states
+  for (int i = 0; i < 4; i++) {
+    limit_switch_states[i] = digitalRead(limit_switch_pins[i]);
+  }
+  
+  // Check if robot is homed
+  if (!is_homed) {
+    // Home the robot
+    home();
+  }
+  
+  // If robot is homed and limit switches are not triggered, move to desired position
+  if (is_homed && !limit_switch_states[0] && !limit_switch_states[1] && !limit_switch_states[2] && !limit_switch_states[3]) {
+    // Get desired position from inverse kinetics
+
   // Read input values for end effector position
   Serial.println("Enter end effector position in mm (x,y,z):");
   while (Serial.available() < 3) {}  // Wait for all values to be entered
@@ -130,87 +312,7 @@ void loop() {
   drum_pos_11 = drum_pos_8;
   
   // Rotate winches to adjust cable length
-  digitalWrite(dir_pin_8, HIGH);
-  digitalWrite(dir_pin_9, HIGH);
-  digitalWrite(dir_pin_10, HIGH);
-  digitalWrite(dir_pin_11, HIGH);
-  
 
-         // Adjust winch 8
-  while (abs(drum_pos_8 - analogRead(A4) * 5 / 1024.0) > error_threshold) {
-    if (drum_pos_8 > analogRead(A4) * 5 / 1024.0) {
-      digitalWrite(step_pin_8, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_8, LOW);
-      delayMicroseconds(100);
-      winch_steps_8--;
-    }
-    else {
-      digitalWrite(step_pin_8, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_8, HIGH);
-      delayMicroseconds(100);
-      winch_steps_8++;
-    }
-    drum_pos_8 = (float)winch_steps_8 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
-  }
-  
-  // Adjust winch 9
-  while (abs(drum_pos_9 - analogRead(A5) * 5 / 1024.0) > error_threshold) {
-    if (drum_pos_9 > analogRead(A5) * 5 / 1024.0) {
-      digitalWrite(step_pin_9, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_9, LOW);
-      delayMicroseconds(100);
-      winch_steps_9--;
-    }
-    else {
-      digitalWrite(step_pin_9, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_9, HIGH);
-      delayMicroseconds(100);
-      winch_steps_9++;
-    }
-    drum_pos_9 = (float)winch_steps_9 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
-  }
-  
-  // Adjust winch 10
-  while (abs(drum_pos_10 - analogRead(A6) * 5 / 1024.0) > error_threshold) {
-    if (drum_pos_10 > analogRead(A6) * 5 / 1024.0) {
-      digitalWrite(step_pin_10, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_10, LOW);
-      delayMicroseconds(100);
-      winch_steps_10--;
-    }
-    else {
-      digitalWrite(step_pin_10, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_10, HIGH);
-      delayMicroseconds(100);
-      winch_steps_10++;
-    }
-    drum_pos_10 = (float)winch_steps_10 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
-  }
-  
-  // Adjust winch 11
-  while (abs(drum_pos_11 - analogRead(A7) * 5 / 1024.0) > error_threshold) {
-    if (drum_pos_11 > analogRead(A7) * 5 / 1024.0) {
-      digitalWrite(step_pin_11, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_11, LOW);
-      delayMicroseconds(100);
-      winch_steps_11--;
-    }
-    else {
-      digitalWrite(step_pin_11, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_11, HIGH);
-      delayMicroseconds(100);
-      winch_steps_11++;
-    }
-    drum_pos_11 = (float)winch_steps_11 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
-  }
   
   // Print final cable lengths and angles
   Serial.print("Cable lengths: ");
@@ -231,60 +333,4 @@ void loop() {
   int steps3 = round(phi3 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
   int steps4 = round(phi4 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
 
-  // Adjust winch 8
-  while (abs(steps1 - winch_steps_8) > error_threshold) {
-    if (steps1 > winch_steps_8) {
-      digitalWrite(step_pin_8, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_8, LOW);
-      delayMicroseconds(100);
-      winch_steps_8++;
-    }
-    else {
-      digitalWrite(step_pin_8, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_8, HIGH);
-      delayMicroseconds(100);
-      winch_steps_8--;
-    }
-  }
   
-  // Adjust winch 9
-  while (abs(steps2 - winch_steps_9) > error_threshold) {
-    if (steps2 > winch_steps_9) {
-      digitalWrite(step_pin_9, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_9, LOW);
-      delayMicroseconds(100);
-      winch_steps_9++;
-    }
-    else {
-      digitalWrite(step_pin_9, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_9, HIGH);
-      delayMicroseconds(100);
-      winch_steps_9--;
-    }
-  }
-  
-  // Adjust winch 10
-  while (abs(steps3 - winch_steps_10) > error_threshold) {
-    if (steps3 > winch_steps_10) {
-      digitalWrite(step_pin_10, HIGH);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_10, LOW);
-      delayMicroseconds(100);
-      winch_steps_10++;
-    }
-    else {
-      digitalWrite(step_pin_10, LOW);
-      delayMicroseconds(100);
-      digitalWrite(step_pin_10, HIGH);
-      delayMicroseconds(100);
-      winch_steps_10--;
-    }
-  }
-  
-  // Adjust winch 11
-  while (abs(steps4 - winch
- 
