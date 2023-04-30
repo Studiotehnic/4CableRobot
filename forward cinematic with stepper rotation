@@ -1,0 +1,97 @@
+#include <math.h>
+#include <AccelStepper.h>
+
+// Define the constants for the robot
+const float l = 10.0; // Length of the cube
+const float h = 20.0; // Height of the cube
+
+// Define the variables for the robot
+float q1, q2, q3, q4; // Joint angles in degrees
+float L1, L2, L3, L4; // Cable lengths
+float x, y, z; // End effector position
+
+// Define the stepper motor pins
+const int STEPS_PER_REV = 200;
+const int WINCH1_PIN = 2;
+const int WINCH2_PIN = 3;
+const int WINCH3_PIN = 4;
+const int WINCH4_PIN = 5;
+
+// Define the stepper motors
+AccelStepper winch1(AccelStepper::DRIVER, WINCH1_PIN);
+AccelStepper winch2(AccelStepper::DRIVER, WINCH2_PIN);
+AccelStepper winch3(AccelStepper::DRIVER, WINCH3_PIN);
+AccelStepper winch4(AccelStepper::DRIVER, WINCH4_PIN);
+
+void setup() {
+  // Initialize the serial communication for debugging
+  Serial.begin(9600);
+  
+  // Set the initial joint angles
+  q1 = 0.0;
+  q2 = 0.0;
+  q3 = 0.0;
+  q4 = 0.0;
+  
+  // Set the initial cable lengths to the length of the cube
+  L1 = l * sqrt(2);
+  L2 = l * sqrt(2);
+  L3 = l * sqrt(2);
+  L4 = l * sqrt(2);
+  
+  // Set the initial position of the stepper motors
+  winch1.setMaxSpeed(500.0);
+  winch2.setMaxSpeed(500.0);
+  winch3.setMaxSpeed(500.0);
+  winch4.setMaxSpeed(500.0);
+  winch1.setCurrentPosition(L1);
+  winch2.setCurrentPosition(L2);
+  winch3.setCurrentPosition(L3);
+  winch4.setCurrentPosition(L4);
+}
+
+void loop() {
+  // Read the sensor data and calculate the joint angles
+  // Note: This section depends on the specific sensors used and is not included in this code.
+  
+  // Calculate the cable lengths based on the position of the stepper motors
+  L1 = winch1.currentPosition();
+  L2 = winch2.currentPosition();
+  L3 = winch3.currentPosition();
+  L4 = winch4.currentPosition();
+  
+  // Calculate the winch angles
+  float alpha = atan(y / x);
+  float cos_alpha = cos(alpha);
+  float sin_alpha = sin(alpha);
+  q1 = atan2((L1 * sin_alpha + L2 * cos_alpha), (L1 * cos_alpha - L2 * sin_alpha));
+  q2 = atan2((L1 * sin_alpha + L2 * cos_alpha), (L2 * cos_alpha - L1 * sin_alpha));
+  q3 = atan2((L3 * sin_alpha + L4 * cos_alpha - l * sin_alpha), (L3 * cos_alpha - l * cos_alpha - L4 * sin_alpha + l * cos_alpha));
+  q4 = atan2((L3 * sin_alpha + L4 * cos_alpha + l * sin_alpha), (L4 * cos_alpha - l * cos_alpha - L3  * sin_alpha + l * cos_alpha));
+  
+  // Calculate the end effector position
+  x = (L1 * cos_alpha - L2 * sin_alpha + L3 * cos_alpha - L4 * sin_alpha) / 2.0;
+  y = (L1 * sin_alpha + L2 * cos_alpha + L3 * sin_alpha + L4 * cos_alpha) / 2.0;
+  z = h - (L1 * cos_alpha + L2 * sin_alpha + L3 * cos_alpha + L4 * sin_alpha) / 2.0;
+  
+  // Print the results for debugging
+  Serial.print("Joint angles (degrees): ");
+  Serial.print(q1 * 180.0 / PI);
+  Serial.print(", ");
+  Serial.print(q2 * 180.0 / PI);
+  Serial.print(", ");
+  Serial.print(q3 * 180.0 / PI);
+  Serial.print(", ");
+  Serial.println(q4 * 180.0 / PI);
+  Serial.print("End effector position: (");
+  Serial.print(x);
+  Serial.print(", ");
+  Serial.print(y);
+  Serial.print(", ");
+  Serial.print(z);
+  Serial.println(")");
+  
+  // Delay for a short period of time
+  delay(1000);
+}
+
