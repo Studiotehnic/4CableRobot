@@ -1,0 +1,127 @@
+// Constants
+const float L1 = 200.0;    // Length of first segment (mm)
+const float L2 = 200.0;    // Length of second segment (mm)
+const float L3 = 200.0;    // Length of third segment (mm)
+const float L4 = 200.0;    // Length of fourth segment (mm)
+const float h = 400.0;     // Height of robot (mm)
+const float l = 200.0;     // Length of cable (mm)
+const float steps_per_rev = 200.0;  // Steps per revolution for stepper motor
+const float microsteps = 16.0;      // Microstepping for stepper motor
+const float winch_radius = 20.0;    // Radius of winch (mm)
+
+// Variables
+float q1, q2, q3, q4;     // Joint angles (radians)
+float x, y, z;            // End effector position (mm)
+float alpha;              // Angle of cable (radians)
+float sin_alpha, cos_alpha;
+float cable_length;       // Length of cable (mm)
+float winch_steps;        // Steps to rotate winch
+int limit_switch_pin_1 = 2; // Limit switch pin for winch 1
+int limit_switch_pin_2 = 3; // Limit switch pin for winch 2
+int limit_switch_pin_3 = 4; // Limit switch pin for winch 3
+int limit_switch_pin_4 = 5; // Limit switch pin for winch 4
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+  
+  // Set limit switch pins as input
+  pinMode(limit_switch_pin_1, INPUT_PULLUP);
+  pinMode(limit_switch_pin_2, INPUT_PULLUP);
+  pinMode(limit_switch_pin_3, INPUT_PULLUP);
+  pinMode(limit_switch_pin_4, INPUT_PULLUP);
+  
+  // Homing procedure
+  Serial.println("Homing procedure...");
+  
+  // Move winch 1 until limit switch is triggered
+  Serial.println("Moving winch 1 to home position...");
+  while (digitalRead(limit_switch_pin_1) == HIGH) {
+    digitalWrite(8, HIGH);  // Rotate winch 1 counterclockwise
+  }
+  digitalWrite(8, LOW);
+  Serial.println("Winch 1 home position set.");
+  
+  // Move winch 2 until limit switch is triggered
+  Serial.println("Moving winch 2 to home position...");
+  while (digitalRead(limit_switch_pin_2) == HIGH) {
+    digitalWrite(9, HIGH);  // Rotate winch 2 counterclockwise
+  }
+  digitalWrite(9, LOW);
+  Serial.println("Winch 2 home position set.");
+  
+  // Move winch 3 until limit switch is triggered
+  Serial.println("Moving winch 3 to home position...");
+  while (digitalRead(limit_switch_pin_3) == HIGH) {
+    digitalWrite(10, HIGH);  // Rotate winch 3 counterclockwise
+  }
+  digitalWrite(10, LOW);
+  Serial.println("Winch 3 home position set.");
+  
+  // Move winch 4 until limit switch is triggered
+  Serial.println
+// Moving winch 4 to home position
+  Serial.println("Moving winch 4 to home position...");
+  while (digitalRead(limit_switch_pin_4) == HIGH) {
+    digitalWrite(11, HIGH);  // Rotate winch 4 counterclockwise
+  }
+  digitalWrite(11, LOW);
+  Serial.println("Winch 4 home position set.");
+  
+  Serial.println("Homing procedure complete.");
+}
+
+void loop() {
+  // Read input values from serial monitor
+  if (Serial.available() > 0) {
+    // Read x, y, and z values
+    x = Serial.parseFloat();
+    y = Serial.parseFloat();
+    z = Serial.parseFloat();
+    
+    // Calculate joint angles
+    q1 = atan2(y, x);
+    q2 = atan2(sqrt(x*x + y*y) - L1, z - h);
+    
+    // Calculate length of projection of segment 2 on xy plane
+    float Lp = sqrt((sqrt(x*x + y*y) - L1)*(sqrt(x*x + y*y) - L1) + (z - h)*(z - h));
+    
+    // Calculate angle between segment 2 and xy plane
+    float phi = atan2((z - h), (sqrt(x*x + y*y) - L1));
+    
+    // Calculate angle of cable
+    alpha = acos((L2*L2 + Lp*Lp - L3*L3)/(2*L2*Lp)) + phi;
+    sin_alpha = sin(alpha);
+    cos_alpha = cos(alpha);
+    
+    // Calculate cable length
+    cable_length = sqrt(Lp*Lp + L2*L2 - 2*Lp*L2*cos_alpha) + L4;
+    
+    // Calculate steps to rotate winch
+    winch_steps = (cable_length/(2*pi*winch_radius))*steps_per_rev*microsteps;
+    
+    // Rotate winches
+    digitalWrite(8, HIGH);
+    digitalWrite(9, HIGH);
+    digitalWrite(10, HIGH);
+    digitalWrite(11, HIGH);
+    delay(winch_steps/2);
+    digitalWrite(8, LOW);
+    digitalWrite(9, LOW);
+    digitalWrite(10, LOW);
+    digitalWrite(11, LOW);
+    delay(winch_steps/2);
+    
+    // Print end effector position and joint angles
+    Serial.print("x: ");
+    Serial.print(x);
+    Serial.print(" y: ");
+    Serial.print(y);
+    Serial.print(" z: ");
+    Serial.print(z);
+    Serial.print(" q1: ");
+    Serial.print(q1*180/pi);
+    Serial.print(" q2: ");
+    Serial.println(q2*180/pi);
+  }
+}
