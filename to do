@@ -1,0 +1,4 @@
+1. Define the coordinates of the four corners of the work volume as constants.
+2. Define a function to calculate the cable lengths based on the current position of the winches.
+3. Define a function to calculate the position of the effector based on the cable lengths.
+4. Define a function to move the effector to a given position using inverse kinematics.
