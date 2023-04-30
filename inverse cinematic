@@ -1,0 +1,290 @@
+// Define robot dimensions
+#define L1 200  // Length of segment 1
+#define L2 200  // Length of segment 2
+#define L3 200  // Length of segment 3
+#define L4 50   // Length of cable from winch to end effector
+#define h 200   // Height of end effector above ground
+#define winch_radius 20  // Radius of winch drum
+#define steps_per_rev 200  // Number of steps per revolution for stepper motor
+#define microsteps 8  // Microstepping mode for stepper motor
+
+// Define pin numbers for stepper motor drivers and limit switches
+#define dir_pin_8 2
+#define step_pin_8 3
+#define dir_pin_9 4
+#define step_pin_9 5
+#define dir_pin_10 6
+#define step_pin_10 7
+#define dir_pin_11 8
+#define step_pin_11 9
+#define limit_switch_pin_8 A0
+#define limit_switch_pin_9 A1
+#define limit_switch_pin_10 A2
+#define limit_switch_pin_11 A3
+
+// Define variables
+float x, y, z;  // End effector position in xyz coordinates
+float q1, q2;  // Joint angles
+float cable_length;  // Length of cable from winch to end effector
+float sin_alpha, cos_alpha;  // Sine and cosine of cable angle
+long winch_steps_8, winch_steps_9, winch_steps_10, winch_steps_11;  // Steps to rotate each winch
+float drum_pos_8, drum_pos_9, drum_pos_10, drum_pos_11;  // Position of winch drum
+float dx, dy, dz;  // Difference between desired and actual end effector position
+float error_threshold = 1;  // Error threshold for position adjustment
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+  
+  // Set pin modes for stepper motor drivers and limit switches
+  pinMode(dir_pin_8, OUTPUT);
+  pinMode(step_pin_8, OUTPUT);
+  pinMode(dir_pin_9, OUTPUT);
+  pinMode(step_pin_9, OUTPUT);
+  pinMode(dir_pin_10, OUTPUT);
+  pinMode(step_pin_10, OUTPUT);
+  pinMode(dir_pin_11, OUTPUT);
+  pinMode(step_pin_11, OUTPUT);
+  pinMode(limit_switch_pin_8, INPUT_PULLUP);
+  pinMode(limit_switch_pin_9, INPUT_PULLUP);
+  pinMode(limit_switch_pin_10, INPUT_PULLUP);
+  pinMode(limit_switch_pin_11, INPUT_PULLUP);
+  
+  // Homing procedure for each winch
+  // Moving winch 8 to home position
+  Serial.println("Moving winch 8 to home position...");
+  while (digitalRead(limit_switch_pin_8) == HIGH) {
+    digitalWrite(step_pin_8, HIGH);
+    delayMicroseconds(100);
+    digitalWrite(step_pin_8, LOW);
+    delayMicroseconds(100);
+  }
+  digitalWrite(step_pin_8, LOW);
+  Serial.println("Winch 8 home position set.");
+  
+
+// Moving winch 9 to home position
+  Serial.println("Moving winch 9 to home position...");
+  while (digitalRead(limit_switch_pin_9) == HIGH) {
+    digitalWrite(step_pin_9, HIGH);
+    delayMicroseconds(100);
+    digitalWrite(step_pin_9, LOW);
+    delayMicroseconds(100);
+  }
+  digitalWrite(step_pin_9, LOW);
+  Serial.println("Winch 9 home position set.");
+  
+  // Moving winch 10 to home position
+  Serial.println("Moving winch 10 to home position...");
+  while (digitalRead(limit_switch_pin_10) == HIGH) {
+    digitalWrite(step_pin_10, HIGH);
+    delayMicroseconds(100);
+    digitalWrite(step_pin_10, LOW);
+    delayMicroseconds(100);
+  }
+  digitalWrite(step_pin_10, LOW);
+  Serial.println("Winch 10 home position set.");
+  
+  // Moving winch 11 to home position
+  Serial.println("Moving winch 11 to home position...");
+  while (digitalRead(limit_switch_pin_11) == HIGH) {
+    digitalWrite(step_pin_11, HIGH);
+    delayMicroseconds(100);
+    digitalWrite(step_pin_11, LOW);
+    delayMicroseconds(100);
+  }
+  digitalWrite(step_pin_11, LOW);
+  Serial.println("Winch 11 home position set.");
+}
+
+void loop() {
+  // Read input values for end effector position
+  Serial.println("Enter end effector position in mm (x,y,z):");
+  while (Serial.available() < 3) {}  // Wait for all values to be entered
+  x = Serial.parseFloat();
+  y = Serial.parseFloat();
+  z = Serial.parseFloat();
+  
+  // Calculate joint angles
+  q1 = atan2(y, x);
+  float a = sqrt(x*x + y*y) - L4;
+  float b = z - h;
+  float c = sqrt(a*a + b*b);
+  q2 = atan2(b, a) + acos((L2*L2 - L3*L3 + c*c) / (2*L2*c));
+  
+  // Calculate cable length and angle
+  cable_length = sqrt(a*a + b*b) + L1*sin(q2);
+  sin_alpha = b/cable_length;
+  cos_alpha = a/cable_length;
+  
+  // Calculate steps to rotate each winch
+  winch_steps_8 = (long)(steps_per_rev * microsteps * (cable_length / (2 * PI * winch_radius)));
+  winch_steps_9 = winch_steps_8;
+  winch_steps_10 = winch_steps_8;
+  winch_steps_11 = winch_steps_8;
+  
+  // Calculate position of winch drum
+  drum_pos_8 = (float)winch_steps_8 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
+  drum_pos_9 = drum_pos_8;
+  drum_pos_10 = drum_pos_8;
+  drum_pos_11 = drum_pos_8;
+  
+  // Rotate winches to adjust cable length
+  digitalWrite(dir_pin_8, HIGH);
+  digitalWrite(dir_pin_9, HIGH);
+  digitalWrite(dir_pin_10, HIGH);
+  digitalWrite(dir_pin_11, HIGH);
+  
+
+         // Adjust winch 8
+  while (abs(drum_pos_8 - analogRead(A4) * 5 / 1024.0) > error_threshold) {
+    if (drum_pos_8 > analogRead(A4) * 5 / 1024.0) {
+      digitalWrite(step_pin_8, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_8, LOW);
+      delayMicroseconds(100);
+      winch_steps_8--;
+    }
+    else {
+      digitalWrite(step_pin_8, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_8, HIGH);
+      delayMicroseconds(100);
+      winch_steps_8++;
+    }
+    drum_pos_8 = (float)winch_steps_8 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
+  }
+  
+  // Adjust winch 9
+  while (abs(drum_pos_9 - analogRead(A5) * 5 / 1024.0) > error_threshold) {
+    if (drum_pos_9 > analogRead(A5) * 5 / 1024.0) {
+      digitalWrite(step_pin_9, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_9, LOW);
+      delayMicroseconds(100);
+      winch_steps_9--;
+    }
+    else {
+      digitalWrite(step_pin_9, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_9, HIGH);
+      delayMicroseconds(100);
+      winch_steps_9++;
+    }
+    drum_pos_9 = (float)winch_steps_9 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
+  }
+  
+  // Adjust winch 10
+  while (abs(drum_pos_10 - analogRead(A6) * 5 / 1024.0) > error_threshold) {
+    if (drum_pos_10 > analogRead(A6) * 5 / 1024.0) {
+      digitalWrite(step_pin_10, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_10, LOW);
+      delayMicroseconds(100);
+      winch_steps_10--;
+    }
+    else {
+      digitalWrite(step_pin_10, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_10, HIGH);
+      delayMicroseconds(100);
+      winch_steps_10++;
+    }
+    drum_pos_10 = (float)winch_steps_10 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
+  }
+  
+  // Adjust winch 11
+  while (abs(drum_pos_11 - analogRead(A7) * 5 / 1024.0) > error_threshold) {
+    if (drum_pos_11 > analogRead(A7) * 5 / 1024.0) {
+      digitalWrite(step_pin_11, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_11, LOW);
+      delayMicroseconds(100);
+      winch_steps_11--;
+    }
+    else {
+      digitalWrite(step_pin_11, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_11, HIGH);
+      delayMicroseconds(100);
+      winch_steps_11++;
+    }
+    drum_pos_11 = (float)winch_steps_11 / (steps_per_rev * microsteps) * 2 * PI * winch_radius;
+  }
+  
+  // Print final cable lengths and angles
+  Serial.print("Cable lengths: ");
+  Serial.print(cable_length + L3 + L4);
+  Serial.print(", ");
+  Serial.print(cable_length + L2 + L4);
+  Serial.print(", ");
+  Serial.println(cable_length + L2 + L3);
+  
+  float phi1 = atan2(y, x) - atan2(L4, cable_length + L3 + L4);
+  float phi2 = PI - atan2(z - L1, sqrt(x * x + y * y - (L4 + cable_length + L3 + L1 - z) * (L4 + cable_length + L3 + L1 - z))) - atan2(L2, L4 + cable_length + L3 + L1 - z);
+  float phi3 = PI - acos((L2 * L2 + L3 * L3 - (cable_length + L4) * (cable_length + L4)) / (2 * L2 * L3)) - atan2(L3 * sin(phi3), L2 + L3 * cos(phi3));
+  float phi4 = atan2(L3 * sin(phi3), L2 + L3 * cos(phi3)) - atan2(cable_length, L4);
+  
+  // Convert angles to steps and adjust winch positions
+  int steps1 = round(phi1 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
+  int steps2 = round(phi2 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
+  int steps3 = round(phi3 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
+  int steps4 = round(phi4 / (2 * PI) * steps_per_rev * microsteps * gear_ratio);
+
+  // Adjust winch 8
+  while (abs(steps1 - winch_steps_8) > error_threshold) {
+    if (steps1 > winch_steps_8) {
+      digitalWrite(step_pin_8, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_8, LOW);
+      delayMicroseconds(100);
+      winch_steps_8++;
+    }
+    else {
+      digitalWrite(step_pin_8, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_8, HIGH);
+      delayMicroseconds(100);
+      winch_steps_8--;
+    }
+  }
+  
+  // Adjust winch 9
+  while (abs(steps2 - winch_steps_9) > error_threshold) {
+    if (steps2 > winch_steps_9) {
+      digitalWrite(step_pin_9, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_9, LOW);
+      delayMicroseconds(100);
+      winch_steps_9++;
+    }
+    else {
+      digitalWrite(step_pin_9, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_9, HIGH);
+      delayMicroseconds(100);
+      winch_steps_9--;
+    }
+  }
+  
+  // Adjust winch 10
+  while (abs(steps3 - winch_steps_10) > error_threshold) {
+    if (steps3 > winch_steps_10) {
+      digitalWrite(step_pin_10, HIGH);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_10, LOW);
+      delayMicroseconds(100);
+      winch_steps_10++;
+    }
+    else {
+      digitalWrite(step_pin_10, LOW);
+      delayMicroseconds(100);
+      digitalWrite(step_pin_10, HIGH);
+      delayMicroseconds(100);
+      winch_steps_10--;
+    }
+  }
+  
+  // Adjust winch 11
+  while (abs(steps4 - winch
+ 
