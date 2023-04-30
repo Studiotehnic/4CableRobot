@@ -1,0 +1,77 @@
+#include <math.h>
+
+// Define the constants for the robot
+const float l = 10.0; // Length of the cube
+const float h = 20.0; // Height of the cube
+
+// Define the variables for the robot
+float q1, q2, q3, q4; // Joint angles in degrees
+float L1, L2, L3, L4; // Cable lengths
+float x, y, z; // End effector position
+
+void setup() {
+  // Initialize the serial communication for debugging
+  Serial.begin(9600);
+  
+  // Set the initial joint angles and cable lengths
+  q1 = 0.0;
+  q2 = 0.0;
+  q3 = 0.0;
+  q4 = 0.0;
+  L1 = 0.0;
+  L2 = 0.0;
+  L3 = 0.0;
+  L4 = 0.0;
+}
+
+void loop() {
+  // Read the sensor data and calculate the joint angles
+  // Note: This section depends on the specific sensors used and is not included in this code.
+  
+  // Calculate the cable lengths using the Pythagorean theorem
+  L1 = sqrt(pow(x, 2) + pow(y, 2) + pow((z - h), 2));
+  L2 = sqrt(pow(x, 2) + pow(y, 2) + pow((z - h), 2));
+  L3 = sqrt(pow((x - l), 2) + pow(y, 2) + pow(z, 2));
+  L4 = sqrt(pow((x + l), 2) + pow(y, 2) + pow(z, 2));
+  
+  // Calculate the winch angles
+  float alpha = atan(y / x);
+  float cos_alpha = cos(alpha);
+  float sin_alpha = sin(alpha);
+  q1 = atan2((L1 * sin_alpha + L2 * cos_alpha), (L1 * cos_alpha - L2 * sin_alpha));
+  q2 = atan2((L1 * sin_alpha + L2 * cos_alpha), (L2 * cos_alpha - L1 * sin_alpha));
+  q3 = atan2((L3 * sin_alpha + L4 * cos_alpha - l * sin_alpha), (L3 * cos_alpha - l * cos_alpha - L4 * sin_alpha + l * cos_alpha));
+  q4 = atan2((L3 * sin_alpha + L4 * cos_alpha + l * sin_alpha), (L4 * cos_alpha - l * cos_alpha - L3 * sin_alpha - l * cos_alpha));
+  
+  // Convert the joint angles from radians to degrees
+  q1 = q1 * 180.0 / PI;
+  q2 = q2 * 180.0 / PI;
+  q3 = q3 * 180.0 / PI;
+  q4 = q4 * 180.0 / PI;
+  
+  // Calculate the end effector position
+  x = (L3 * cos_alpha - l * cos_alpha + L4 * cos_alpha + l * cos_alpha) / 2.0;
+  y = (L1 * cos_alpha + L2 * cos_alpha) /
+  y = (L1 * sin_alpha + L2 * sin_alpha) / 2.0;
+  z = h - (L1 * cos_alpha + L2 * cos_alpha + L3 * sin_alpha + L4 * sin_alpha) / 2.0;
+  
+  // Print the results for debugging
+  Serial.print("Joint angles (degrees): ");
+  Serial.print(q1);
+  Serial.print(", ");
+  Serial.print(q2);
+  Serial.print(", ");
+  Serial.print(q3);
+  Serial.print(", ");
+  Serial.println(q4);
+  Serial.print("End effector position: (");
+  Serial.print(x);
+  Serial.print(", ");
+  Serial.print(y);
+  Serial.print(", ");
+  Serial.print(z);
+  Serial.println(")");
+  
+  // Delay for a short period of time
+  delay(1000);
+}
