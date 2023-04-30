@@ -11,7 +11,7 @@
 #define steps_per_rev 200  // Number of steps per revolution for stepper motor
 #define microsteps 16  // Microstepping mode for stepper motor
 
-// Define pin numbers for stepper motor drivers and limit switches
+
 
 
 //Define Constants
@@ -35,15 +35,10 @@ const float cable_length_per_revolution = drum_diameter * PI;
 const float cable_length_per_step = cable_length_per_revolution / (steps_per_revolution * microstepping * gearbox_ratio);
 const float cable_length_per_button_press = 50.0; // mm
 const float max_cable_length = sqrt(3.0) * 200.0; // mm
-
 const float cableDiameter = 1.0; // mm
-
-
-
 
 // Limit switch distances from the corner
 const int switchDistance = 50; //mm
-
 
 // Acceleration and speed
 const float acceleration = 100.0; // mm/s^2
@@ -56,6 +51,7 @@ float current_y = 0.0;
 float current_z = 0.0;
 bool is_homed = false;
 
+// Define pin numbers for stepper motor drivers and limit switches
 // Define variables for limit switch pins
 const int limit_switch_pins[4] = {18, 19, 20, 21};
 
@@ -76,13 +72,8 @@ AccelStepper motor2(AccelStepper::HALF4WIRE, stepper_pins[1][0], stepper_pins[1]
 AccelStepper motor3(AccelStepper::HALF4WIRE, stepper_pins[2][0], stepper_pins[2][2], stepper_pins[2][1], stepper_pins[2][3]);
 AccelStepper motor4(AccelStepper::HALF4WIRE, stepper_pins[3][0], stepper_pins[3][2], stepper_pins[3][1], stepper_pins[3][3]);
 
-// Set the speed and acceleration of the stepper motors
-  
-  for (int i = 0; i < 4; i++) {
-    motor[i].setMaxSpeed(500.0);
-    motor[i].setAcceleration(100.0);
-    motor[i].setSpeed(100.0);
-  }
+
+
 
 // Current motor positions
 float motor1Position = 0.0;
@@ -92,7 +83,8 @@ float motor4Position = 0.0;
 
 // Calculate cable length from motor position
 float getCableLength(float motorPosition) {
-  float cableLength = (motorPosition / stepsPerMicrostep) * drumDiameter * PI / transmissionRatio + sqrt(2) * workVolume / 2;
+  float cableLength = (motorPosition / microstepping) * drum_diameter * PI / gearbox_ratio + sqrt(2) * WORKSPACE_EDGE_LENGTH / 2;
+
   return cableLength;
 }
 
@@ -112,37 +104,54 @@ void moveMotor(AccelStepper &motor, float position) {
 // Home motor
 void homeMotor(AccelStepper &motor, int switchPin, float &position) {
 
-//////// unfold motors that are not homing
-float currentPosition = motor.currentPosition();
+  // Unfold the motor if it is not homing
+  float currentPosition = motor.currentPosition();
   float steps = position - currentPosition;
 
   // Check if motor is homing or not
   if (steps < 0) {
     // Motor is homing, move directly
-    motor.move(steps);
+    motor.move(-1000000);
   } else {
-    // Motor is not homing, unfold cable first
-    float unfoldedSteps = steps + UNFOLD_STEPS;
-    motor.move(unfoldedSteps);
-  }
-}
-  // Define variables for current position and homing state
-  bool is_homed = false;
-
-  // Home motor until limit switch is triggered
-  while (!is_homed) {
+    // Motor is not homing, first move to the lower limit switch
+    bool is_at_lower_limit = false;
     motor.setAcceleration(acceleration);
-    motor.setMaxSpeed(maxSpeed);
-    motor.moveTo(-1000000);
-    while (motor.distanceToGo() != 0) {
-      motor.run();
-      if (digitalRead(switchPin) == HIGH) {
+    motor.setSpeed(maxSpeed);
+    while (!is_at_lower_limit) {
+      motor.move(-1000);
+      if (digitalRead(switchPin) == LOW) {
+        is_at_lower_limit = true;
         motor.setCurrentPosition(0);
-        is_homed = true;
-        position = 0;
-        break;
       }
     }
+
+    // Move to the upper limit switch
+    is_at_lower_limit = false;
+    motor.setSpeed(maxSpeed);
+    while (!is_at_lower_limit) {
+      motor.move(1000);
+      if (digitalRead(switchPin) == LOW) {
+        is_at_lower_limit = true;
+        position = 0;
+      }
+    }
+
+    // Move back to the lower limit switch
+    is_at_lower_limit = false;
+    motor.setSpeed(maxSpeed);
+    while (!is_at_lower_limit) {
+      motor.move(-1000);
+      if (digitalRead(switchPin) == LOW) {
+        is_at_lower_limit = true;
+        motor.setCurrentPosition(0);
+      }
+    }
+
+    // Move to the zero position
+    motor.setSpeed(maxSpeed);
+    motor.move(currentPosition);
+    motor.setCurrentPosition(0);
+    position = 0;
   }
 }
 
@@ -171,6 +180,15 @@ void setup() {
   for (int i = 0; i < 4; i++) {
     pinMode(limit_switch_pins[i], INPUT_PULLUP);
   }
+  
+  // Set the speed and acceleration of the stepper motors
+for (int i = 0; i < 4; i++) {
+  motor[i].setMaxSpeed(500.0);
+  motor[i].setAcceleration(100.0);
+  motor[i].setSpeed(100.0);
+}
+
+
   
   // Home the robot
   home();
@@ -231,10 +249,20 @@ void loop() {
   
   // Check if robot is homed
   if (!is_homed) {
+    
+    
     // Home the robot
-    home();
-  }
-  
+void homeRobot() {
+
+// Move each motor to the lower limit switch
+homeMotor(motor1, limit_switch_pins[0], motor1Position);
+homeMotor(motor2, limit_switch_pins[1], motor2Position);
+homeMotor(motor3, limit_switch_pins[2], motor3Position);
+homeMotor(motor4, limit_switch_pins[3], motor4Position);
+
+// Update the homing state
+is_homed = true;
+}
   // If robot is homed and limit switches are not triggered, move to desired position
   if (is_homed && !limit_switch_states[0] && !limit_switch_states[1] && !limit_switch_states[2] && !limit_switch_states[3]) {
     // Get desired position from inverse kinetics
